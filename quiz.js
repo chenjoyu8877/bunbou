@@ -1046,41 +1046,57 @@ function triggerNextCardAction() {
     }
 }
 
-// ⭐️ 修正後的 MCQ 選項生成 (使用 globalOptionPool)
+// ⭐️ 修正後的 MCQ 選項生成 (防止重複答案出現)
 function generateMcqOptions() {
     const correctAnswer = currentCorrectAnswer;
-    let distractors = [];
-    let options = [];
     
-    // ⭐️ 修改 1: 使用 globalOptionPool 作為來源
-    const numDistractorsToFind = Math.min(3, globalOptionPool.length - 1);
+    // 1. 準備一個 Set 來記錄「已經選用的答案文字」
+    // 用途：確保選項內不會有重複的文字 (例如已經有「ば」就不會再選另一個「ば」)
+    let usedAnswersSet = new Set();
     
-    let retries = 0;
-    const maxRetries = 20;
+    // 先把「正確答案」正規化後放入 Set，避免錯誤選項跟正確答案長得一樣
+    usedAnswersSet.add(normalizeString(correctAnswer));
 
-    while (distractors.length < numDistractorsToFind && retries < maxRetries) {
+    let distractors = [];
+    let retries = 0;
+    const maxRetries = 50; // 增加嘗試次數，因為重複率高，需要多找幾次
+
+    // 計算我們需要幾個錯誤選項 (最多 3 個，如果題庫太少則減少)
+    // 這裡我們檢查的是 unique 的數量，比較難精確估算，所以主要靠 retry 限制
+    const targetCount = 3;
+
+    while (distractors.length < targetCount && retries < maxRetries) {
         retries++;
         
-        // ⭐️ 修改 2: 從 globalOptionPool 隨機抽取
+        // 從總題庫隨機抽一個
         const randomIndex = Math.floor(Math.random() * globalOptionPool.length);
         const randomWord = globalOptionPool[randomIndex];
         
         if (!randomWord[ANSWER_FIELD]) continue;
-        const distractor = randomWord[ANSWER_FIELD];
         
-        if (distractor === correctAnswer) continue;
-        if (distractors.includes(distractor)) continue;
-        distractors.push(distractor);
+        const distractorText = randomWord[ANSWER_FIELD];
+        const distractorNormalized = normalizeString(distractorText);
+        
+        // ⭐️ 核心判斷：
+        // 如果這個答案的文字，已經在 Set 裡面 (代表跟正確答案一樣，或跟已選的錯誤選項一樣)
+        // 則跳過，重新抽
+        if (usedAnswersSet.has(distractorNormalized)) {
+            continue;
+        }
+        
+        // 如果是新的答案，加入 Set 和 列表
+        usedAnswersSet.add(distractorNormalized);
+        distractors.push(distractorText);
     }
-    options = [correctAnswer, ...distractors];
     
-    for (let i = options.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [options[i], options[j]] = [options[j], options[i]];
-    }
+    // 合併正確答案與錯誤選項
+    let options = [correctAnswer, ...distractors];
     
+    // 洗牌 (打亂順序)
+    shuffleArray(options);
+    
+    // --- 以下是渲染按鈕的程式碼 (保持原本樣式) ---
     mcqOptionsArea.innerHTML = '';
-
     mcqOptionsArea.style.display = 'grid';
     mcqOptionsArea.style.gridTemplateColumns = '1fr 1fr';
     mcqOptionsArea.style.gap = '15px'; 
@@ -1095,7 +1111,6 @@ function generateMcqOptions() {
         mcqOptionsArea.appendChild(button);
     });
 }
-
 function handleMcqAnswer(selectedButton) {
     const selectedAnswer = selectedButton.dataset.answer;
     
